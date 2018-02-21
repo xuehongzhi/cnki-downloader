@@ -916,7 +916,10 @@ func (c *CNKIDownloader) Download(paper *Article) (string, error) {
 	if err != nil {
 		return "", nil
 	}
-	fullName := filepath.Join(currentDir, makeSafeFileName(paper.Information.Title)+".caj")
+	//设置下载目录
+	downdir := filepath.Join(currentDir, c.search_cache.keyword, paper.Information.SourceName)
+	os.MkdirAll(downdir, 1)
+	fullName := filepath.Join(downdir, makeSafeFileName(paper.Information.Title)+".caj")
 
 	fmt.Printf("Downloading... total (%d) bytes\n", info.Size)
 	err = c.getFile(info.DownloadUrl[0], fullName, info.Size)
@@ -1123,6 +1126,31 @@ func update() (allowContinue bool) {
 	return
 }
 
+func parseIndexes(s string) ([]int, error) {
+	numbers := []int{}
+	ss := strings.Split(s, ",")
+	for i := range ss {
+		sss := strings.Split(ss[i], "-")
+		start, err := strconv.ParseInt(sss[0], 10, 32)
+		if err != nil {
+			return []int{}, err
+		}
+		end := start
+		if len(sss) == 2 {
+			end, err = strconv.ParseInt(sss[1], 10, 32)
+			if err != nil {
+				return []int{}, err
+			}
+		}
+		for j := start; j <= end; j++ {
+			fmt.Println("index=", j)
+			numbers = append(numbers, int(j))
+
+		}
+	}
+	return numbers, nil
+}
+
 //
 // lord commander
 //
@@ -1296,23 +1324,27 @@ func main() {
 						break
 					}
 
-					id, err := strconv.ParseInt(cmd_parts[1], 10, 32)
+					//todo: download list handle
+					ids, err := parseIndexes(cmd_parts[1])
 					if err != nil {
 						fmt.Fprintf(color.Output, "Invalid input %s\n", color.RedString(err.Error()))
 						break
 					}
-					id--
+					for i := range ids {
+						id := ids[i]
+						id--
 
-					entries := ctx.GetPageData()
+						entries := ctx.GetPageData()
 
-					color.White("Downloading... %s\n", entries[id].Information.Title)
-					path, err := downloader.Download(&entries[id])
-					if err != nil {
-						fmt.Fprintf(color.Output, "Download failed %s\n", color.RedString(err.Error()))
-						break
+						color.White("Downloading... %s\n", entries[id].Information.Title)
+						path, err := downloader.Download(&entries[id])
+						if err != nil {
+							fmt.Fprintf(color.Output, "Download failed %s\n", color.RedString(err.Error()))
+							continue
+						}
+
+						fmt.Fprintf(color.Output, "Download success (%s) \n", color.GreenString(path))
 					}
-
-					fmt.Fprintf(color.Output, "Download success (%s) \n", color.GreenString(path))
 				}
 			case "break":
 				{
