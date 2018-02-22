@@ -1126,29 +1126,32 @@ func update() (allowContinue bool) {
 	return
 }
 
-func parseIndexes(s string) ([]int, error) {
-	numbers := []int{}
+func parseEntries(s string, entries []Article) ([]Article, error) {
+	if s == "*" {
+		return entries, nil
+	}
+	entrs := []Article{}
 	ss := strings.Split(s, ",")
 	for i := range ss {
 		sss := strings.Split(ss[i], "-")
 		start, err := strconv.ParseInt(sss[0], 10, 32)
 		if err != nil {
-			return []int{}, err
+			return []Article{}, err
 		}
 		end := start
 		if len(sss) == 2 {
 			end, err = strconv.ParseInt(sss[1], 10, 32)
 			if err != nil {
-				return []int{}, err
+				return []Article{}, err
 			}
 		}
 		for j := start; j <= end; j++ {
 			fmt.Println("index=", j)
-			numbers = append(numbers, int(j))
+			entrs = append(entrs, entries[int(j-1)])
 
 		}
 	}
-	return numbers, nil
+	return entrs, nil
 }
 
 //
@@ -1251,10 +1254,12 @@ func main() {
 					fmt.Fprintf(color.Output, "\t%s: break out, and search the other papers\n", color.YellowString("BREAK"))
 				}
 			case "info":
+			case "i":
 				{
 					color.White("  page size: %d\n page index: %d\ntotal pages: %d\n", psize, pindex, pcount)
 				}
 			case "next":
+			case "n":
 				{
 					next_page, err := downloader.SearchNext(pindex + 1)
 					if err != nil {
@@ -1265,6 +1270,7 @@ func main() {
 					}
 				}
 			case "prev":
+			case "p":
 				{
 					prev_page, err := downloader.SearchPrev()
 					if err != nil {
@@ -1275,6 +1281,7 @@ func main() {
 					}
 				}
 			case "show":
+			case "s":
 				{
 
 					if len(cmd_parts) < 2 {
@@ -1325,19 +1332,16 @@ func main() {
 					}
 
 					//todo: download list handle
-					ids, err := parseIndexes(cmd_parts[1])
+
+					entries, err := parseEntries(cmd_parts[1], ctx.GetPageData())
 					if err != nil {
 						fmt.Fprintf(color.Output, "Invalid input %s\n", color.RedString(err.Error()))
 						break
 					}
-					for i := range ids {
-						id := ids[i]
-						id--
+					for _, entry := range entries {
 
-						entries := ctx.GetPageData()
-
-						color.White("Downloading... %s\n", entries[id].Information.Title)
-						path, err := downloader.Download(&entries[id])
+						color.White("Downloading... %s\n", entry.Information.Title)
+						path, err := downloader.Download(&entry)
 						if err != nil {
 							fmt.Fprintf(color.Output, "Download failed %s\n", color.RedString(err.Error()))
 							continue
@@ -1347,6 +1351,7 @@ func main() {
 					}
 				}
 			case "break":
+			case "b":
 				{
 					downloader.SearchStop()
 					color.Yellow("Break out.\n")
