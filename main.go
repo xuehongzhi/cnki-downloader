@@ -9,10 +9,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"github.com/axgle/mahonia"
 	"github.com/fatih/color"
 	"gopkg.in/cheggaaa/pb.v1"
+	"gopkg.in/ini.v1"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -69,6 +71,7 @@ type CNKISearchResult struct {
 	page_index     int
 	page_count     int
 	entries_count  int
+	dllist         map[string]string
 }
 
 type searchOption struct {
@@ -92,6 +95,7 @@ type CNKIDownloader struct {
 	token_expire int
 	search_cache cnkiSearchCache
 	http_client  *http.Client
+	work_dir     string
 }
 
 type appUpdateInfo struct {
@@ -243,6 +247,7 @@ func gbk2utf8(charset string, r io.Reader) (io.Reader, error) {
 	decoder := mahonia.NewDecoder("gbk")
 	reader := decoder.NewReader(r)
 	return reader, nil
+
 }
 
 //
@@ -439,6 +444,27 @@ func (c *CNKIDownloader) Auth() error {
 	return nil
 }
 
+func getExistFiles(dir string, pathnames []string) map[string]string {
+	exists := map[string]string{}
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if len(pathnames) == 0 {
+			return errors.New("traverse finished")
+		}
+		if !info.IsDir() {
+			for i, v := range pathnames {
+				if strings.Index(info.Name(), v) == 0 {
+					exists[v] = path
+					fmt.Println(v)
+					pathnames = append(pathnames[:i], pathnames[i+1:]...)
+					break
+				}
+			}
+		}
+		return nil
+	})
+	return exists
+}
+
 //
 // search papers
 //
@@ -515,9 +541,11 @@ func (c *CNKIDownloader) Search(keyword string, option *searchOption, page int) 
 		return nil, fmt.Errorf("Unmatched page number in result (%d %d)", page, result.PageIndex)
 	}
 
+	articles_name := []string{}
 	for i := 0; i < len(result.Articles); i++ {
 		p := &result.Articles[i]
 		p.analyze()
+		articles_name = append(articles_name, p.Information.Title)
 	}
 
 	//
@@ -530,6 +558,8 @@ func (c *CNKIDownloader) Search(keyword string, option *searchOption, page int) 
 	search_context.page_count = result.PageCount
 	search_context.page_size = result.PageSize
 	search_context.page_index = result.PageIndex
+
+	search_context.dllist = getExistFiles(c.work_dir, articles_name)
 
 	return search_context, nil
 }
@@ -912,12 +942,8 @@ func (c *CNKIDownloader) Download(paper *Article) (string, error) {
 		return "", fmt.Errorf("Invalid file information")
 	}
 
-	currentDir, err := os.Getwd()
-	if err != nil {
-		return "", nil
-	}
 	//设置下载目录
-	downdir := filepath.Join(currentDir, c.search_cache.keyword, paper.Information.SourceName)
+	downdir := filepath.Join(c.work_dir, c.search_cache.keyword, paper.Information.SourceName)
 	os.MkdirAll(downdir, 1)
 	fullName := filepath.Join(downdir, makeSafeFileName(paper.Information.Title)+".caj")
 
@@ -941,16 +967,23 @@ func (c *CNKIDownloader) Download(paper *Article) (string, error) {
 //
 // print a set of articles
 //
-func printArticles(page int, articles []Article) {
+func printArticles(page int, articles []Article, downloaded map[string]string) {
 	fmt.Fprintf(color.Output, "\n-----------------------------------------------------------(%s)--\n", color.MagentaString("page:%d", page))
 	for id, entry := range articles {
 		source := entry.Information.SourceName
 		if len(source) == 0 {
 			source = "N/A"
 		}
+		title := entry.Information.Title
+		if val, ok := downloaded[entry.Information.Title]; ok && len(val) != 0 {
+			title = color.GreenString(entry.Information.Title)
+		} else {
+			title = color.WhiteString(entry.Information.Title)
+		}
+
 		fmt.Fprintf(color.Output, "%s: %s (%s)\n",
 			color.CyanString("%02d", id+1),
-			color.WhiteString(entry.Information.Title),
+			title,
 			color.YellowString("%s", source))
 	}
 	fmt.Fprintf(color.Output, "-----------------------------------------------------------(%s)--\n\n", color.MagentaString("page%d", page))
@@ -1154,6 +1187,67 @@ func parseEntries(s string, entries []Article) ([]Article, error) {
 	return entrs, nil
 }
 
+func getWorkDir(cfg *ini.File) string {
+	s := ""
+	sec, _ := cfg.GetSection("")
+	if sec.Haskey("workdir") {
+		w := sec.Key("workdir").Value()
+		if len(w) != 0 {
+			s = strings.Trim(w, " ")
+		} else {
+			fmt.Fprintf(color.Output, "$ %s", color.CyanString("input working directory: "))
+			s = getInputString()
+		}
+	}
+	//
+	for len(s) != 0 {
+		si, err := os.Stat(s)
+		if si.IsDir() && err == nil {
+			sec.Key("workdir").SetValue(s)
+			break
+		}
+		fmt.Fprintf(color.Output, "$ %s", color.CyanString("input working directory: "))
+		s = getInputString()
+	}
+	if len(s) == 0 {
+		s, _ := os.Getwd()
+		sec.NewKey("workdir", s)
+
+	}
+	return s
+}
+
+func saveConfig(filepath string, cfg *ini.File) {
+	f, er := os.OpenFile(filepath, os.O_WRONLY, 0666)
+	if er != nil {
+		f.Close()
+		return
+	}
+	f.Seek(0, 0)
+	cfg.WriteTo(f)
+
+	f.Close()
+}
+
+func getConfig(filepath string) *ini.File {
+	f, er := os.OpenFile(filepath, os.O_RDWR|os.O_CREATE, 0666)
+	if er != nil {
+		fmt.Println(er)
+		f.Close()
+		return nil
+	}
+	bs, _ := ioutil.ReadAll(f)
+	cfg, er := ini.InsensitiveLoad(bs)
+
+	if er != nil {
+		f.Close()
+		fmt.Println(er)
+		return nil
+	}
+	f.Close()
+	return cfg
+}
+
 //
 // lord commander
 //
@@ -1201,6 +1295,10 @@ func main() {
 	} else {
 		fmt.Fprintf(color.Output, "%s\n\n", color.GreenString("Success"))
 	}
+	//todo: check work directory, if not exits prompt to set one
+	cfg := getConfig("cnkidl.ini")
+	downloader.work_dir = getWorkDir(cfg)
+	saveConfig("cnkidl.ini", cfg)
 
 	for {
 
@@ -1221,7 +1319,7 @@ func main() {
 			fmt.Fprintf(color.Output, "Search '%s' %s (error: %s)\n", s, color.RedString("fail"), err.Error())
 			continue
 		}
-		printArticles(1, result.GetPageData())
+		printArticles(1, result.GetPageData(), result.dllist)
 
 		//
 		// tips
@@ -1266,7 +1364,7 @@ func main() {
 						fmt.Fprintf(color.Output, "Next page is invalid (%s)\n", color.RedString(err.Error()))
 					} else {
 						_, index, _ := next_page.GetPageInfo()
-						printArticles(index, next_page.GetPageData())
+						printArticles(index, next_page.GetPageData(), next_page.dllist)
 					}
 				}
 			case "prev":
@@ -1277,7 +1375,7 @@ func main() {
 						color.Red("Previous page is invalid")
 					} else {
 						_, index, _ := prev_page.GetPageInfo()
-						printArticles(index, prev_page.GetPageData())
+						printArticles(index, prev_page.GetPageData(), prev_page.dllist)
 					}
 				}
 			case "show":
@@ -1364,6 +1462,5 @@ func main() {
 			}
 		}
 	}
-
 	return
 }
