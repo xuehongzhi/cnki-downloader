@@ -953,6 +953,10 @@ func (c *CNKIDownloader) Download(paper *Article) (string, error) {
 		return "", err
 	}
 
+	s, e := c.CurrentPage()
+	if e == nil {
+		s.dllist[paper.Information.Title] = fullName
+	}
 	if isPDFDocument(fullName) {
 		s := strings.Replace(fullName, filepath.Ext(fullName), ".pdf", 1)
 		err = os.Rename(fullName, s)
