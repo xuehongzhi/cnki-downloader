@@ -976,7 +976,8 @@ func printArticles(page int, articles []Article, downloaded map[string]string) {
 		}
 		title := entry.Information.Title
 		if val, ok := downloaded[entry.Information.Title]; ok && len(val) != 0 {
-			title = color.GreenString(entry.Information.Title)
+			title = fmt.Sprintf("%s[file://%s]", color.GreenString(entry.Information.Title), color.HiBlueString(filepath.ToSlash(val)))
+
 		} else {
 			title = color.WhiteString(entry.Information.Title)
 		}
