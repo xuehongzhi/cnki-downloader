@@ -1194,10 +1194,11 @@ func getWorkDir(cfg *ini.File) string {
 		w := sec.Key("workdir").Value()
 		if len(w) != 0 {
 			s = strings.Trim(w, " ")
-		} else {
-			fmt.Fprintf(color.Output, "$ %s", color.CyanString("input working directory: "))
-			s = getInputString()
 		}
+	}
+	if len(s) == 0 {
+		fmt.Fprintf(color.Output, "$ %s", color.CyanString("input working directory: "))
+		s = getInputString()
 	}
 	//
 	for len(s) != 0 {
@@ -1351,13 +1352,11 @@ func main() {
 					fmt.Fprintf(color.Output, "\t %s: (SHOW ID), show the information about specified item, eg: SHOW 2, SHOW 9...etc\n", color.YellowString("SHOW"))
 					fmt.Fprintf(color.Output, "\t%s: break out, and search the other papers\n", color.YellowString("BREAK"))
 				}
-			case "info":
-			case "i":
+			case "info", "i":
 				{
 					color.White("  page size: %d\n page index: %d\ntotal pages: %d\n", psize, pindex, pcount)
 				}
-			case "next":
-			case "n":
+			case "next", "n":
 				{
 					next_page, err := downloader.SearchNext(pindex + 1)
 					if err != nil {
@@ -1367,8 +1366,7 @@ func main() {
 						printArticles(index, next_page.GetPageData(), next_page.dllist)
 					}
 				}
-			case "prev":
-			case "p":
+			case "prev", "p":
 				{
 					prev_page, err := downloader.SearchPrev()
 					if err != nil {
@@ -1378,8 +1376,7 @@ func main() {
 						printArticles(index, prev_page.GetPageData(), prev_page.dllist)
 					}
 				}
-			case "show":
-			case "s":
+			case "show", "s":
 				{
 
 					if len(cmd_parts) < 2 {
@@ -1448,8 +1445,7 @@ func main() {
 						fmt.Fprintf(color.Output, "Download success (%s) \n", color.GreenString(path))
 					}
 				}
-			case "break":
-			case "b":
+			case "break", "b":
 				{
 					downloader.SearchStop()
 					color.Yellow("Break out.\n")
