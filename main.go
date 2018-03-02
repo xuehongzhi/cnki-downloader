@@ -985,7 +985,6 @@ func printArticles(page int, articles []Article, downloaded map[string]string) {
 		} else {
 			title = color.WhiteString(entry.Information.Title)
 		}
-
 		fmt.Fprintf(color.Output, "%s: %s (%s)\n",
 			color.CyanString("%02d", id+1),
 			title,
@@ -1347,7 +1346,7 @@ func main() {
 			s = getInputString()
 			cmd_parts := strings.Split(s, " ")
 			switch strings.ToLower(cmd_parts[0]) {
-			case "help":
+			case "help", "h":
 				{
 					fmt.Fprintf(color.Output, "Support follow commands:\n")
 					fmt.Fprintf(color.Output, "\t %s: show page's information\n", color.YellowString("INFO"))
@@ -1361,9 +1360,32 @@ func main() {
 				{
 					color.White("  page size: %d\n page index: %d\ntotal pages: %d\n", psize, pindex, pcount)
 				}
+			case "current", "c":
+				{
+					cur_page, err := downloader.SearchNext(pindex)
+					if err != nil {
+						fmt.Fprintf(color.Output, "Next page is invalid (%s)\n", color.RedString(err.Error()))
+					} else {
+						_, index, _ := cur_page.GetPageInfo()
+						printArticles(index, cur_page.GetPageData(), cur_page.dllist)
+					}
+				}
+
 			case "next", "n":
 				{
-					next_page, err := downloader.SearchNext(pindex + 1)
+					if len(cmd_parts) > 2 {
+						color.Red("Invalid input")
+						break
+					}
+					var step int = 1
+					if len(cmd_parts) == 2 {
+						n, err := strconv.ParseInt(cmd_parts[1], 10, 32)
+						if err == nil {
+							step = int(n)
+						}
+					}
+
+					next_page, err := downloader.SearchNext(pindex + step)
 					if err != nil {
 						fmt.Fprintf(color.Output, "Next page is invalid (%s)\n", color.RedString(err.Error()))
 					} else {
@@ -1446,8 +1468,7 @@ func main() {
 							fmt.Fprintf(color.Output, "Download failed %s\n", color.RedString(err.Error()))
 							continue
 						}
-
-						fmt.Fprintf(color.Output, "Download success (%s) \n", color.GreenString(path))
+						fmt.Fprintf(color.Output, "Download success (%s) \n", color.GreenString(fmt.Sprintf("file://%s", filepath.ToSlash(path))))
 					}
 				}
 			case "break", "b":
