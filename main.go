@@ -217,6 +217,29 @@ func getInputString() string {
 //
 // detect a document is PDF format or not
 //
+func getFileExt(fileName string) string {
+	file, err := os.Open(fileName)
+	if err != nil {
+		return "caj"
+	}
+	defer file.Close()
+
+	b := make([]byte, 4)
+	_, err = file.Read(b)
+	if err != nil {
+		return "caj"
+	}
+
+	if string(b) == "%PDF" {
+		return "pdf"
+	}
+
+	if bytes.IndexByte(b, byte(0xc8)) == 0 {
+		return "caj"
+	}
+	return "nh"
+}
+
 func isPDFDocument(fileName string) bool {
 	file, err := os.Open(fileName)
 	if err != nil {
@@ -957,8 +980,10 @@ func (c *CNKIDownloader) Download(paper *Article) (string, error) {
 	if e == nil {
 		s.dllist[paper.Information.Title] = fullName
 	}
-	if isPDFDocument(fullName) {
-		s := strings.Replace(fullName, filepath.Ext(fullName), ".pdf", 1)
+
+	extname := getFileExt(fullName)
+	if extname != "caj" {
+		s := strings.Replace(fullName, filepath.Ext(fullName), "."+extname, 1)
 		err = os.Rename(fullName, s)
 		if err == nil {
 			return s, nil
